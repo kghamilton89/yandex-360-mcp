@@ -1,6 +1,6 @@
 {
   "name": "yandex-mail-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server for Yandex 360 Mail (IMAP/SMTP): search, read, send, organize",
   "license": "MIT",
   "author": "Kenneth Hamilton",
@@ -18,7 +18,15 @@
     "url": "git+https://github.com/kghamilton89/yandex-360-mcp.git",
     "directory": "packages/mail"
   },
-  "keywords": ["mcp", "model-context-protocol", "yandex", "yandex-360", "yandex-mail", "imap", "smtp"],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "yandex",
+    "yandex-360",
+    "yandex-mail",
+    "imap",
+    "smtp"
+  ],
   "engines": {
     "node": ">=22"
   },
@@ -33,6 +41,7 @@
     "imapflow": "^2.9.1",
     "mailparser": "^3.12.4",
     "nodemailer": "^10.2.1",
+    "yandex-360-oauth": "^0.1.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {

@@ -1,6 +1,6 @@
 {
   "name": "yandex-calendar-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server for Yandex 360 Calendar (CalDAV): list, create, update, delete events",
   "license": "MIT",
   "author": "Kenneth Hamilton",
@@ -18,7 +18,14 @@
     "url": "git+https://github.com/kghamilton89/yandex-360-mcp.git",
     "directory": "packages/calendar"
   },
-  "keywords": ["mcp", "model-context-protocol", "yandex", "yandex-360", "yandex-calendar", "caldav"],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "yandex",
+    "yandex-360",
+    "yandex-calendar",
+    "caldav"
+  ],
   "engines": {
     "node": ">=22"
   },
@@ -33,6 +40,7 @@
     "ical.js": "^2.2.1",
     "timezones-ical-library": "^2.3.2",
     "tsdav": "^2.5.0",
+    "yandex-360-oauth": "^0.1.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {

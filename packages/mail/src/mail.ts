@@ -5,6 +5,7 @@ import { ImapFlow } from 'imapflow';
 import { simpleParser, type ParsedMail } from 'mailparser';
 import nodemailer from 'nodemailer';
 import MailComposer from 'nodemailer/lib/mail-composer';
+import { TokenProvider } from 'yandex-360-oauth';
 import type { MailConfig } from './config.js';
 import {
   type Address,
@@ -57,20 +58,69 @@ function bodyText(parsed: ParsedMail): string {
   return '';
 }
 
+const OAUTH_CAPABILITIES = ['AUTH=OAUTHBEARER', 'AUTH=XOAUTH', 'AUTH=XOAUTH2'];
+
+/**
+ * Yandex accepts AUTHENTICATE XOAUTH2 but does not list it in CAPABILITY, and imapflow only
+ * uses OAuth when it is advertised. Declare it just before authenticating with a token.
+ */
+export class YandexImapFlow extends ImapFlow {
+  async run(command: string, ...args: unknown[]): Promise<unknown> {
+    const opts = args[1] as { accessToken?: string } | undefined;
+    if (command.toUpperCase() === 'AUTHENTICATE' && opts?.accessToken && !OAUTH_CAPABILITIES.some((c) => this.capabilities.has(c))) {
+      this.capabilities.set('AUTH=XOAUTH2', true);
+    }
+    const run = (ImapFlow.prototype as unknown as { run: (this: ImapFlow, command: string, ...args: unknown[]) => Promise<unknown> }).run;
+    return run.call(this, command, ...args);
+  }
+}
+
+function isAuthFailure(err: unknown): boolean {
+  const e = err as { authenticationFailed?: boolean; responseCode?: number; code?: string };
+  return Boolean(e?.authenticationFailed) || e?.responseCode === 535 || e?.code === 'EAUTH';
+}
+
 export class MailService {
-  constructor(private readonly cfg: MailConfig) {}
+  private readonly tokens?: TokenProvider;
+
+  constructor(private readonly cfg: MailConfig) {
+    if (cfg.auth.type === 'oauth') this.tokens = new TokenProvider(cfg.auth.oauth);
+  }
+
+  /**
+   * Runs `fn` with fresh credentials. With OAuth, an authentication failure triggers one
+   * forced token refresh and a retry, which covers tokens revoked before their expiry.
+   */
+  private async withCredentials<T>(fn: (auth: { user: string; pass?: string; accessToken?: string }) => Promise<T>): Promise<T> {
+    const user = this.cfg.user;
+    if (this.cfg.auth.type === 'password') return fn({ user, pass: this.cfg.auth.password });
+    const tokens = this.tokens!;
+    try {
+      return await fn({ user, accessToken: await tokens.getAccessToken() });
+    } catch (err) {
+      if (!isAuthFailure(err) || this.cfg.auth.oauth.staticToken) throw err;
+      return fn({ user, accessToken: await tokens.refresh(true) });
+    }
+  }
+
+  private async connectImap(): Promise<ImapFlow> {
+    return this.withCredentials(async (auth) => {
+      const client = new YandexImapFlow({
+        host: this.cfg.imap.host,
+        port: this.cfg.imap.port,
+        secure: this.cfg.imap.secure,
+        auth: auth.accessToken ? { user: auth.user, accessToken: auth.accessToken } : { user: auth.user, pass: auth.pass },
+        logger: false,
+      });
+      // Socket errors after a failed command are surfaced through the command's promise.
+      client.on('error', () => {});
+      await client.connect();
+      return client;
+    });
+  }
 
   private async withImap<T>(fn: (client: ImapFlow) => Promise<T>): Promise<T> {
-    const client = new ImapFlow({
-      host: this.cfg.imap.host,
-      port: this.cfg.imap.port,
-      secure: this.cfg.imap.secure,
-      auth: { user: this.cfg.user, pass: this.cfg.password },
-      logger: false,
-    });
-    // Socket errors after a failed command are surfaced through the command's promise.
-    client.on('error', () => {});
-    await client.connect();
+    const client = await this.connectImap();
     try {
       return await fn(client);
     } finally {
@@ -266,31 +316,35 @@ export class MailService {
   async send(input: ComposeInput) {
     const mail = await this.compose(input);
     const { raw, envelope, messageId } = await MailService.build(mail, false);
-    const transport = nodemailer.createTransport({
-      host: this.cfg.smtp.host,
-      port: this.cfg.smtp.port,
-      secure: this.cfg.smtp.secure,
-      auth: { user: this.cfg.user, pass: this.cfg.password },
-    });
-    try {
-      const info = await transport.sendMail({ envelope, raw });
-      let savedTo: string | undefined;
-      if (this.cfg.saveSent) {
-        savedTo = await this.withImap(async (client) => {
-          const sent = await this.specialFolder(client, '\\Sent');
-          await client.append(sent, raw, ['\\Seen']);
-          return sent;
-        });
+    const info = await this.withCredentials(async (auth) => {
+      const transport = nodemailer.createTransport({
+        host: this.cfg.smtp.host,
+        port: this.cfg.smtp.port,
+        secure: this.cfg.smtp.secure,
+        auth: auth.accessToken
+          ? { type: 'OAuth2', user: auth.user, accessToken: auth.accessToken }
+          : { user: auth.user, pass: auth.pass },
+      });
+      try {
+        return await transport.sendMail({ envelope, raw });
+      } finally {
+        transport.close();
       }
-      return {
-        messageId,
-        accepted: info.accepted,
-        rejected: info.rejected,
-        savedToSent: savedTo ?? false,
-      };
-    } finally {
-      transport.close();
+    });
+    let savedTo: string | undefined;
+    if (this.cfg.saveSent) {
+      savedTo = await this.withImap(async (client) => {
+        const sent = await this.specialFolder(client, '\\Sent');
+        await client.append(sent, raw, ['\\Seen']);
+        return sent;
+      });
     }
+    return {
+      messageId,
+      accepted: info.accepted,
+      rejected: info.rejected,
+      savedToSent: savedTo ?? false,
+    };
   }
 
   async createDraft(input: ComposeInput) {

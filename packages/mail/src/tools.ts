@@ -1,20 +1,24 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
-import { ConfigError, type MailConfig, loadConfig } from './config.js';
+import { ConfigError, LOGIN_COMMAND, type MailConfig, loadConfig } from './config.js';
 import { MailService } from './mail.js';
 
 function ok(data: unknown): CallToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(data, null, 2) }] };
 }
 
-function fail(err: unknown): CallToolResult {
+function fail(err: unknown, config: MailConfig | undefined): CallToolResult {
   let message = err instanceof Error ? err.message : String(err);
-  const e = err as { authenticationFailed?: boolean; responseText?: string; responseCode?: number };
-  if (e?.authenticationFailed || e?.responseCode === 535) {
+  const e = err as { authenticationFailed?: boolean; responseText?: string; responseCode?: number; code?: string };
+  if (e?.authenticationFailed || e?.responseCode === 535 || e?.code === 'EAUTH') {
     message =
-      'Authentication failed. Check YANDEX_USER and YANDEX_MAIL_APP_PASSWORD (it must be a "Mail" app password), ' +
-      'and that IMAP is enabled at https://mail.yandex.com/#setup/client.';
+      config?.auth.type === 'oauth'
+        ? 'OAuth authentication failed. The token may be revoked, or the app may lack the "mail:imap_full" / ' +
+          `"mail:smtp" permissions. Run \`${LOGIN_COMMAND}\` again, and check that IMAP is enabled at ` +
+          'https://mail.yandex.com/#setup/client.'
+        : 'Authentication failed. Check YANDEX_USER and YANDEX_MAIL_APP_PASSWORD (it must be a "Mail" app password), ' +
+          'and that IMAP is enabled at https://mail.yandex.com/#setup/client.';
   } else if (e?.responseText) {
     message = `${message}: ${e.responseText}`;
   }
@@ -71,7 +75,7 @@ export function registerMailTools(server: McpServer, env: Record<string, string 
     try {
       return ok(await fn(get()));
     } catch (err) {
-      return fail(err);
+      return fail(err, config);
     }
   };
 

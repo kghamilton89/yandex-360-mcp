@@ -79,8 +79,24 @@ describe('text helpers', () => {
 });
 
 describe('loadConfig', () => {
-  it('requires credentials', () => {
-    expect(() => loadConfig({})).toThrow(/Missing credentials/);
+  it('requires a user and credentials', () => {
+    expect(() => loadConfig({})).toThrow(/Missing YANDEX_USER/);
+    expect(() => loadConfig({ YANDEX_USER: 'a@x' })).toThrow(/YANDEX_MAIL_APP_PASSWORD.*YANDEX_OAUTH_CLIENT_ID/);
+  });
+  it('uses an app password by default', () => {
+    expect(loadConfig({ YANDEX_USER: 'a@x', YANDEX_APP_PASSWORD: 'p' }).auth).toEqual({ type: 'password', password: 'p' });
+  });
+  it('switches to OAuth when a client ID is set', () => {
+    const c = loadConfig({ YANDEX_USER: 'a@x', YANDEX_MAIL_APP_PASSWORD: 'p', YANDEX_OAUTH_CLIENT_ID: 'cid', XDG_CONFIG_HOME: '/cfg' });
+    expect(c.auth.type).toBe('oauth');
+    if (c.auth.type !== 'oauth') return;
+    expect(c.auth.oauth).toMatchObject({ user: 'a@x', clientId: 'cid', oauthUrl: 'https://oauth.yandex.com', loginCommand: 'npx yandex-mail-mcp login' });
+    expect(c.auth.oauth.tokenFile).toMatch(/^\/cfg\/yandex-360-mcp\/oauth\/a@x-/);
+  });
+  it('accepts a static OAuth token and an explicit mode', () => {
+    expect(loadConfig({ YANDEX_USER: 'a@x', YANDEX_OAUTH_TOKEN: 't' }).auth.type).toBe('oauth');
+    expect(loadConfig({ YANDEX_USER: 'a@x', YANDEX_AUTH: 'password', YANDEX_OAUTH_CLIENT_ID: 'c', YANDEX_APP_PASSWORD: 'p' }).auth.type).toBe('password');
+    expect(() => loadConfig({ YANDEX_USER: 'a@x', YANDEX_AUTH: 'oauth' })).toThrow(/YANDEX_OAUTH_CLIENT_ID/);
   });
   it('prefers mail-specific vars and applies defaults', () => {
     const c = loadConfig({ YANDEX_USER: 'a@x', YANDEX_APP_PASSWORD: 'p', YANDEX_MAIL_USER: 'm@x', YANDEX_MAIL_READ_ONLY: 'true' });

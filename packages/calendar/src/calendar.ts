@@ -1,5 +1,6 @@
 import { type DAVCalendar, type DAVCalendarObject, createDAVClient } from 'tsdav';
-import type { CalendarConfig } from './config.js';
+import { TokenProvider } from 'yandex-360-oauth';
+import { type CalendarConfig, LOGIN_COMMAND } from './config.js';
 import {
   type EventInput,
   type EventInstance,
@@ -41,33 +42,76 @@ function pathOf(url: string, base: string): string {
 async function check(res: Response, action: string): Promise<void> {
   if (res.ok) return;
   if (res.status === 412) throw new Error(`${action} failed: the event was changed by someone else (ETag mismatch). Fetch it again and retry.`);
-  if (res.status === 401 || res.status === 403) throw new Error(`${action} failed: not authorized (HTTP ${res.status}). Check the Calendar app password.`);
+  if (res.status === 401 || res.status === 403) throw new Error(`${action} failed: not authorized (HTTP ${res.status}). Check the Calendar credentials.`);
   const body = await res.text().catch(() => '');
   throw new Error(`${action} failed: HTTP ${res.status} ${res.statusText}${body ? ` — ${body.slice(0, 300)}` : ''}`);
 }
 
+const isAuthError = (msg: string) => /\b(401|403)\b|unauthori|forbidden/i.test(msg);
+
 export class CalendarService {
-  private client?: Promise<Client>;
+  /** The DAV client is tied to the token it was created with, since tsdav resolves auth headers once. */
+  private client?: { token?: string; promise: Promise<Client> };
   private cache?: { at: number; calendars: DAVCalendar[] };
+  private readonly tokens?: TokenProvider;
 
-  constructor(private readonly cfg: CalendarConfig) {}
+  constructor(private readonly cfg: CalendarConfig) {
+    if (cfg.auth.type === 'oauth') this.tokens = new TokenProvider(cfg.auth.oauth);
+  }
 
-  private getClient(): Promise<Client> {
-    this.client ??= createDAVClient({
-      serverUrl: this.cfg.serverUrl,
-      credentials: { username: this.cfg.user, password: this.cfg.password },
-      authMethod: 'Basic',
-      defaultAccountType: 'caldav',
-    }).catch((err: unknown) => {
-      this.client = undefined;
+  private createClient(token: string | undefined): Promise<Client> {
+    const base = { serverUrl: this.cfg.serverUrl, defaultAccountType: 'caldav' as const };
+    if (token) {
+      return createDAVClient({
+        ...base,
+        credentials: { username: this.cfg.user },
+        authMethod: 'Custom',
+        authFunction: async () => ({ Authorization: `OAuth ${token}` }),
+      });
+    }
+    const password = this.cfg.auth.type === 'password' ? this.cfg.auth.password : '';
+    return createDAVClient({ ...base, credentials: { username: this.cfg.user, password }, authMethod: 'Basic' });
+  }
+
+  private authFailedMessage(): string {
+    return this.cfg.auth.type === 'oauth'
+      ? `OAuth authentication failed. The token may be revoked or the app may lack Calendar (CalDAV) permission. Run \`${LOGIN_COMMAND}\` again.`
+      : 'Authentication failed. Check YANDEX_USER and that YANDEX_CALENDAR_APP_PASSWORD is a "Calendar" app password.';
+  }
+
+  private describeConnectError(err: unknown): Error {
+    const msg = err instanceof Error ? err.message : String(err);
+    return new Error(isAuthError(msg) ? this.authFailedMessage() : `Could not connect to ${this.cfg.serverUrl}: ${msg}`);
+  }
+
+  private async connect(token: string | undefined): Promise<Client> {
+    try {
+      return await this.createClient(token);
+    } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        /401|403|unauthori|forbidden/i.test(msg)
-          ? 'Authentication failed. Check YANDEX_USER and that YANDEX_CALENDAR_APP_PASSWORD is a "Calendar" app password.'
-          : `Could not connect to ${this.cfg.serverUrl}: ${msg}`,
-      );
+      const canRefresh = this.tokens && this.cfg.auth.type === 'oauth' && !this.cfg.auth.oauth.staticToken;
+      if (!isAuthError(msg) || !canRefresh) throw this.describeConnectError(err);
+      // A token can be revoked before it expires: refresh once and retry.
+      const fresh = await this.tokens!.refresh(true);
+      try {
+        const client = await this.createClient(fresh);
+        this.client = { token: fresh, promise: Promise.resolve(client) };
+        return client;
+      } catch (retryErr) {
+        throw this.describeConnectError(retryErr);
+      }
+    }
+  }
+
+  private async getClient(): Promise<Client> {
+    const token = this.tokens ? await this.tokens.getAccessToken() : undefined;
+    if (this.client && this.client.token === token) return this.client.promise;
+    const holder = { token, promise: this.connect(token) };
+    this.client = holder;
+    holder.promise.catch(() => {
+      if (this.client === holder) this.client = undefined;
     });
-    return this.client;
+    return holder.promise;
   }
 
   private async calendars(refresh = false): Promise<DAVCalendar[]> {

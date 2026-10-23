@@ -1,6 +1,6 @@
 # yandex-mail-mcp
 
-An [MCP](https://modelcontextprotocol.io) server for **Yandex 360 Mail** (personal Yandex Mail and Yandex 360 for Business domains). It talks to your mailbox over IMAP and SMTP, so it needs no OAuth app. You only need an app password.
+An [MCP](https://modelcontextprotocol.io) server for **Yandex 360 Mail** (personal Yandex Mail and Yandex 360 for Business domains). It talks to your mailbox over IMAP and SMTP. Sign in with an [app password](#setup) (simplest) or [OAuth](#oauth-instead-of-an-app-password) (no password stored in your MCP config).
 
 It's one half of [yandex-360-mcp](https://github.com/kghamilton89/yandex-360-mcp). The Calendar server, [`yandex-calendar-mcp`](https://www.npmjs.com/package/yandex-calendar-mcp), installs separately.
 
@@ -38,6 +38,27 @@ Claude Desktop, Cursor and other JSON-configured clients:
 
 Requires Node.js 22 or newer.
 
+## OAuth instead of an app password
+
+With OAuth, your MCP config holds only a ClientID. The token lives in a private file (`~/.config/yandex-360-mcp/oauth/`, mode 0600) and refreshes automatically.
+
+1. **Register an OAuth app** at [oauth.yandex.com/client/new](https://oauth.yandex.com/client/new):
+   - Redirect URI: `https://oauth.yandex.com/verification_code`
+   - Permissions: **Mail → reading and deleting messages over IMAP** (`mail:imap_full`) and **Mail → sending messages over SMTP** (`mail:smtp`). Add the Calendar (CalDAV) permission too if you also use `yandex-calendar-mcp`, and one login then covers both servers.
+2. **Enable IMAP** as in step 1 of Setup above.
+3. **Log in** once, in a terminal. This opens your browser, and you paste back the code Yandex shows:
+   ```sh
+   YANDEX_USER=you@yourdomain.com YANDEX_OAUTH_CLIENT_ID=<ClientID> npx yandex-mail-mcp login
+   ```
+4. **Add the server** with the same two variables and no password:
+   ```sh
+   claude mcp add -s user yandex-mail \
+     -e YANDEX_USER=you@yourdomain.com -e YANDEX_OAUTH_CLIENT_ID=<ClientID> \
+     -- npx -y yandex-mail-mcp
+   ```
+
+`npx yandex-mail-mcp auth-status` shows the saved token, and `npx yandex-mail-mcp logout` deletes it. The login uses PKCE, so no client secret is needed. If you get a token some other way, pass it as `YANDEX_OAUTH_TOKEN` instead. It's used as-is and never refreshed.
+
 ## Tools
 
 | Tool | What it does | Read-only mode |
@@ -59,7 +80,13 @@ Messages are addressed by **folder + UID**. `search_messages` returns UIDs, and 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `YANDEX_USER` | required | Your full address. `YANDEX_MAIL_USER` overrides it for this server |
-| `YANDEX_MAIL_APP_PASSWORD` | required | A **Mail** app password. Falls back to `YANDEX_APP_PASSWORD` |
+| `YANDEX_MAIL_APP_PASSWORD` | required for app-password auth | A **Mail** app password. Falls back to `YANDEX_APP_PASSWORD` |
+| `YANDEX_OAUTH_CLIENT_ID` | none | Your OAuth app's ClientID. Setting it switches the server to OAuth |
+| `YANDEX_OAUTH_TOKEN` | none | A pre-issued access token (OAuth without the login step, no refresh) |
+| `YANDEX_AUTH` | auto | Forces `oauth` or `password` when both kinds of credentials are set |
+| `YANDEX_OAUTH_CLIENT_SECRET` | none | Only needed if your app requires it. PKCE logins don't |
+| `YANDEX_OAUTH_SCOPE` | app's permissions | Requests specific scopes, e.g. `mail:imap_ro mail:smtp` |
+| `YANDEX_OAUTH_TOKEN_FILE` | `~/.config/yandex-360-mcp/oauth/<user>-<app>.json` | Where the token is stored |
 | `YANDEX_MAIL_READ_ONLY` | `false` | `true` registers only `list_folders`, `search_messages` and `get_message` |
 | `YANDEX_MAIL_FROM_NAME` | none | Display name on outgoing mail |
 | `YANDEX_MAIL_SAVE_SENT` | `false` | Appends a copy of sent mail to Sent. Turn this on if sent messages don't show up there |
@@ -69,7 +96,8 @@ Messages are addressed by **folder + UID**. `search_messages` returns UIDs, and 
 
 ## Notes
 
-- **Security:** the app password grants full mailbox access. Store it the way your MCP client stores secrets, and use `YANDEX_MAIL_READ_ONLY=true` if you only want the assistant to read.
+- **Security:** an app password or `mail:imap_full` token grants full mailbox access. Use `YANDEX_MAIL_READ_ONLY=true` if you only want the assistant to read, and with OAuth you can grant just `mail:imap_ro`.
+- **Revoking access:** a revoked or expired OAuth token is refreshed once automatically. If that fails, the error tells you to run `login` again. To cut off access entirely, remove the app at [id.yandex.ru/personal/data-access](https://id.yandex.ru/personal/data-access).
 - **Attachments:** `send_message` reads `attachments` from local paths, and `save_attachment` writes local files. Both run with your user's permissions.
 - **Connections:** each tool call opens and closes its own IMAP connection, so nothing goes stale between calls.
 

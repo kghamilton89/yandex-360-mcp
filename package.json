@@ -5,7 +5,9 @@
   "license": "MIT",
   "type": "module",
   "workspaces": [
-    "packages/*"
+    "packages/oauth",
+    "packages/mail",
+    "packages/calendar"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
