@@ -109,7 +109,8 @@ describe('loadConfig', () => {
     expect(c.imap).toEqual({ host: 'imap.yandex.com', port: 993, secure: true });
     expect(c.smtp).toEqual({ host: 'smtp.yandex.com', port: 465, secure: true });
     expect(c.readOnly).toBe(true);
-    expect(c.saveSent).toBe(false);
+    expect(c.saveSent).toBe(true);
+    expect(loadConfig({ YANDEX_USER: 'a@x', YANDEX_MAIL_SAVE_SENT: 'false' }).saveSent).toBe(false);
   });
   it('uses STARTTLS for port 587', () => {
     const c = loadConfig({ YANDEX_USER: 'a@x', YANDEX_APP_PASSWORD: 'p', YANDEX_SMTP_PORT: '587' });

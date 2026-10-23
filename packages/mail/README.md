@@ -76,7 +76,7 @@ Messages are addressed by **folder + UID**. `search_messages` returns UIDs, and 
 | `YANDEX_OAUTH_TOKEN_FILE` | `~/.config/yandex-360-mcp/oauth/<user>-<app>-<server>.json` | Where the token is stored |
 | `YANDEX_MAIL_READ_ONLY` | `false` | `true` registers only `list_folders`, `search_messages` and `get_message` |
 | `YANDEX_MAIL_FROM_NAME` | none | Display name on outgoing mail |
-| `YANDEX_MAIL_SAVE_SENT` | `false` | Appends a copy of sent mail to Sent. Turn this on if sent messages don't show up there |
+| `YANDEX_MAIL_SAVE_SENT` | `true` | Saves a copy of sent mail to Sent. Yandex doesn't do this for mail sent over SMTP. Set `false` if you see duplicates |
 | `YANDEX_IMAP_HOST` / `YANDEX_IMAP_PORT` | `imap.yandex.com` / `993` | IMAP over TLS |
 | `YANDEX_SMTP_HOST` / `YANDEX_SMTP_PORT` | `smtp.yandex.com` / `465` | Port 465 uses implicit TLS, other ports use STARTTLS |
 | `YANDEX_SMTP_SECURE` | auto | Forces implicit TLS on (`true`) or off (`false`) |

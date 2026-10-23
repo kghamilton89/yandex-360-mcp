@@ -87,6 +87,7 @@ export function loadConfig(env: Env = process.env): MailConfig {
           : true,
     },
     readOnly: flag(env.YANDEX_MAIL_READ_ONLY),
-    saveSent: flag(env.YANDEX_MAIL_SAVE_SENT),
+    // Yandex does not file mail sent over SMTP in Sent, so the copy is saved by default.
+    saveSent: env.YANDEX_MAIL_SAVE_SENT === undefined || env.YANDEX_MAIL_SAVE_SENT === '' ? true : flag(env.YANDEX_MAIL_SAVE_SENT),
   };
 }
