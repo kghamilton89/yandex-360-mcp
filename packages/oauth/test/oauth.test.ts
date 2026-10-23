@@ -169,7 +169,20 @@ describe('TokenProvider', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('without a client secret, uses the token until it expires and then asks to log in again', async () => {
+    await store({ expires_at: Date.now() + 60_000 });
+    const { impl, calls } = fakeFetch(() => ({ json: {} }));
+    const p = new TokenProvider(settings, impl);
+    expect(p.canRefresh).toBe(false);
+    expect(await p.getAccessToken()).toBe('AT-old');
+    await store({ expires_at: Date.parse('2027-10-23T12:00:00Z') - 400 * 86400_000 });
+    await expect(p.getAccessToken()).rejects.toThrow(/expired on \d{4}-\d{2}-\d{2} \(logins last about a year\)\. Run `npx yandex-mail-mcp login`/);
+    await expect(p.refresh()).rejects.toThrow(/can't be renewed automatically.*npx yandex-mail-mcp login/);
+    expect(calls).toHaveLength(0);
+  });
+
   it('refreshes near expiry and saves the rotated refresh token', async () => {
+    settings.clientSecret = 'secret';
     await store({ expires_at: Date.now() + 60_000 });
     const { impl, calls } = fakeFetch((b) => {
       expect(b.get('grant_type')).toBe('refresh_token');
@@ -182,6 +195,7 @@ describe('TokenProvider', () => {
   });
 
   it('keeps the old refresh token if none is returned', async () => {
+    settings.clientSecret = 'secret';
     await store({ expires_at: Date.now() - 1 });
     const { impl } = fakeFetch(() => ({ json: { access_token: 'AT-new', expires_in: 7200 } }));
     await new TokenProvider(settings, impl).getAccessToken();
@@ -189,6 +203,7 @@ describe('TokenProvider', () => {
   });
 
   it('refreshes only once when several processes race', async () => {
+    settings.clientSecret = 'secret';
     await store({ expires_at: Date.now() - 1 });
     let n = 0;
     const { impl, calls } = fakeFetch(async () => {
@@ -203,17 +218,20 @@ describe('TokenProvider', () => {
   });
 
   it('explains how to recover from a failed refresh', async () => {
+    settings.clientSecret = 'secret';
     await store({ expires_at: Date.now() - 1 });
     const { impl } = fakeFetch(() => ({ status: 400, json: { error: 'invalid_grant', error_description: 'Refresh token expired' } }));
     await expect(new TokenProvider(settings, impl).getAccessToken()).rejects.toThrow(/Refresh token expired.*npx yandex-mail-mcp login/);
   });
 
   it('requires login again when expired without a refresh token', async () => {
+    settings.clientSecret = 'secret';
     await store({ expires_at: Date.now() - 1, refresh_token: undefined });
     await expect(new TokenProvider(settings).getAccessToken()).rejects.toThrow(/no refresh token/);
   });
 
   it('recovers from a stale lock', async () => {
+    settings.clientSecret = 'secret';
     await store({ expires_at: Date.now() - 1 });
     const { mkdir, utimes } = await import('node:fs/promises');
     await mkdir(`${settings.tokenFile}.lock`);
@@ -245,6 +263,7 @@ describe('runAuthCli', () => {
     expect(o.text()).toContain(opened[0]!);
     expect(o.text()).toContain('Mail over IMAP');
     expect(o.text()).toContain('Using your own OAuth app (ClientID client-123)');
+    expect(o.text()).toContain('Run this login again after that (Yandex logins last about a year)');
     expect(new URL(opened[0]!).searchParams.get('scope')).toBe('mail:imap_full mail:smtp');
     expect(o.text()).toMatch(/Logged in\. Token saved to .*yandex-360-mcp\/oauth\/me@example\.com-[0-9a-f]{12}-mail\.json/);
     expect(calls[0]!.get('code')).toBe('7654321');
@@ -252,7 +271,7 @@ describe('runAuthCli', () => {
     const s = opts();
     expect(await runAuthCli(['auth-status'], s.base)).toBe(0);
     expect(s.text()).toMatch(/Account:\s+me@example\.com/);
-    expect(s.text()).toMatch(/Refreshable:\s+yes/);
+    expect(s.text()).toMatch(/Auto-renews:\s+no, run login again/);
 
     const l = opts();
     expect(await runAuthCli(['logout'], l.base)).toBe(0);

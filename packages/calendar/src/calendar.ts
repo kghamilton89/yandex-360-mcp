@@ -89,7 +89,7 @@ export class CalendarService {
       return await this.createClient(token);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      const canRefresh = this.tokens && this.cfg.auth.type === 'oauth' && !this.cfg.auth.oauth.staticToken;
+      const canRefresh = Boolean(this.tokens?.canRefresh);
       if (!isAuthError(msg) || !canRefresh) throw this.describeConnectError(err);
       // A token can be revoked before it expires: refresh once and retry.
       const fresh = await this.tokens!.refresh(true);

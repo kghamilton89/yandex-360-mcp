@@ -81,7 +81,7 @@ export class MailService {
     try {
       return await fn({ user, accessToken: await tokens.getAccessToken() });
     } catch (err) {
-      if (!isAuthFailure(err) || this.cfg.auth.oauth.staticToken) throw err;
+      if (!isAuthFailure(err) || !tokens.canRefresh) throw err;
       return fn({ user, accessToken: await tokens.refresh(true) });
     }
   }

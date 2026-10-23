@@ -10,7 +10,7 @@ It's one half of [yandex-360-mcp](https://github.com/kghamilton89/yandex-360-mcp
    ```sh
    YANDEX_USER=you@yourdomain.com npx yandex-calendar-mcp login
    ```
-   The server asks only to read and change your calendars (`calendar:all`). The token is saved in `~/.config/yandex-360-mcp/oauth/`, readable only by you, and refreshes automatically.
+   The server asks only to read and change your calendars (`calendar:all`). The token is saved in `~/.config/yandex-360-mcp/oauth/`, readable only by you.
 2. **Add the server to your MCP client.** Only your address and time zone go in the config, with no password.
 
 Claude Code:
@@ -35,7 +35,9 @@ Claude Desktop, Cursor and other JSON-configured clients:
 }
 ```
 
-`npx yandex-calendar-mcp auth-status` shows the saved login, and `npx yandex-calendar-mcp logout` deletes it.
+`npx yandex-calendar-mcp auth-status` shows the saved login and when it expires, and `npx yandex-calendar-mcp logout` deletes it.
+
+> **Log in again about once a year.** Yandex logins last about a year, and Yandex only renews them for apps that send a client secret, which the shared app can't safely ship. When the login expires, every tool returns an error saying so, with the command to run (`npx yandex-calendar-mcp login`), so your assistant can tell you what to do. Your own OAuth app with `YANDEX_OAUTH_CLIENT_SECRET` set renews automatically.
 
 Requires Node.js 22 or newer.
 
@@ -74,7 +76,7 @@ By default, login goes through the shared "Yandex 360 MCP" app. Its ClientID is 
 | `YANDEX_OAUTH_CLIENT_ID` | shared app | Your own OAuth app's ClientID |
 | `YANDEX_OAUTH_TOKEN` | none | A pre-issued access token (OAuth without the login step, no refresh) |
 | `YANDEX_AUTH` | auto | Forces `oauth` or `password`. By default OAuth is used unless an app password is set |
-| `YANDEX_OAUTH_CLIENT_SECRET` | none | Only needed if your app requires it. PKCE logins don't |
+| `YANDEX_OAUTH_CLIENT_SECRET` | none | Your own app's secret. Lets the server renew the login automatically instead of asking you to log in again each year |
 | `YANDEX_OAUTH_SCOPE` | `calendar:all` | Scopes to request (only with your own app) |
 | `YANDEX_OAUTH_TOKEN_FILE` | `~/.config/yandex-360-mcp/oauth/<user>-<app>-<server>.json` | Where the token is stored |
 | `YANDEX_CALENDAR_TIMEZONE` | system zone | IANA zone for reading local-time input and formatting output |
@@ -84,7 +86,7 @@ By default, login goes through the shared "Yandex 360 MCP" app. Its ClientID is 
 
 ## Notes
 
-- **Revoking access:** a revoked or expired OAuth token is refreshed once automatically. If that fails, the error tells you to run `login` again. To cut off access entirely, remove the app at [id.yandex.ru/personal/data-access](https://id.yandex.ru/personal/data-access).
+- **Revoking access:** if Yandex rejects or expires the login, the error tells you to run `login` again (with your own app and its client secret, the server first renews it once on its own). To cut off access entirely, remove the app at [id.yandex.ru/personal/data-access](https://id.yandex.ru/personal/data-access).
 - **Write safety:** writes use the event's ETag, so editing an event that changed in the meantime fails instead of silently overwriting it.
 - **Invitations:** adding `attendees` sets you as organizer, and Yandex may email invitations to the attendees.
 - **Recurring events:** `update_event` and `delete_event` act on the whole series. Editing a single occurrence isn't supported yet.

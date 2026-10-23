@@ -22,7 +22,8 @@ const server = new McpServer(
     instructions:
       'Tools for a Yandex 360 mailbox over IMAP/SMTP. Messages are addressed by folder + UID: use ' +
       'search_messages to find UIDs, then get_message to read. Draft with create_draft unless the user ' +
-      'has explicitly asked to send.',
+      'has explicitly asked to send.' +
+      ' If a tool says the Yandex login expired or was rejected, tell the user to run the login command shown in the error in a terminal; logins last about a year and are not renewed automatically.',
   },
 );
 registerMailTools(server);

@@ -87,7 +87,7 @@ describe('XOAUTH2 login', () => {
 });
 
 describe('MailService with OAuth', () => {
-  it('refreshes once and retries when IMAP rejects a not-yet-expired token', async () => {
+  it('with a client secret, refreshes once and retries when IMAP rejects a not-yet-expired token', async () => {
     const imap = await mockImap('FRESH');
     const refreshCalls: string[] = [];
     const oauth = http.createServer(async (req, res) => {
@@ -116,7 +116,7 @@ describe('MailService with OAuth', () => {
       user: 'me@yandex.ru',
       auth: {
         type: 'oauth',
-        oauth: { user: 'me@yandex.ru', clientId: 'cid', oauthUrl: `http://127.0.0.1:${(oauth.address() as net.AddressInfo).port}`, tokenFile },
+        oauth: { user: 'me@yandex.ru', clientId: 'cid', clientSecret: 'secret', oauthUrl: `http://127.0.0.1:${(oauth.address() as net.AddressInfo).port}`, tokenFile },
       },
       imap: { host: '127.0.0.1', port: imap.port, secure: false },
       smtp: { host: '127.0.0.1', port: 1, secure: false },
@@ -130,5 +130,33 @@ describe('MailService with OAuth', () => {
     expect(payloads).toHaveLength(2);
     expect(payloads[0]).toContain('Bearer REVOKED');
     expect(payloads[1]).toContain('Bearer FRESH');
+  });
+});
+
+describe('MailService with the shared app (no client secret)', () => {
+  it('reports a rejected token as an authentication failure without trying to refresh', async () => {
+    const imap = await mockImap('SOMETHING-ELSE');
+    close = imap.close;
+    const dir = await mkdtemp(path.join(tmpdir(), 'ymail-'));
+    const tokenFile = path.join(dir, 'token.json');
+    await writeToken(tokenFile, {
+      client_id: 'cid',
+      user: 'me@yandex.ru',
+      access_token: 'REVOKED',
+      refresh_token: 'RT-1',
+      expires_at: Date.now() + 3600_000,
+      updated_at: Date.now(),
+    });
+    const cfg: MailConfig = {
+      user: 'me@yandex.ru',
+      auth: { type: 'oauth', oauth: { user: 'me@yandex.ru', clientId: 'cid', oauthUrl: 'http://127.0.0.1:9', tokenFile } },
+      imap: { host: '127.0.0.1', port: imap.port, secure: false },
+      smtp: { host: '127.0.0.1', port: 1, secure: false },
+      readOnly: false,
+      saveSent: false,
+    };
+    const err = await new MailService(cfg).listFolders().then(() => undefined, (e: unknown) => e as { authenticationFailed?: boolean });
+    expect(err?.authenticationFailed).toBe(true);
+    expect(imap.seen.filter((l) => l.startsWith('PAYLOAD'))).toHaveLength(1);
   });
 });

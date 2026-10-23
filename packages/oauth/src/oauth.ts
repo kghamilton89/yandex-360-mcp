@@ -96,10 +96,15 @@ export async function completeLogin(
 }
 
 const needsRefresh = (t: StoredToken, now = Date.now()) => t.expires_at !== undefined && now >= t.expires_at - REFRESH_MARGIN_MS;
+const isExpired = (t: StoredToken, now = Date.now()) => t.expires_at !== undefined && now >= t.expires_at;
 
 /**
- * Supplies a valid access token: the static token if configured, otherwise the stored token,
- * refreshed (under a cross-process lock) when it is about to expire.
+ * Supplies a valid access token: the static token if configured, otherwise the stored token.
+ *
+ * Yandex only refreshes tokens for requests that carry the app's client secret, and the shared
+ * app ships without one, so by default an expired login (tokens last about a year) asks the
+ * user to log in again. With YANDEX_OAUTH_CLIENT_SECRET set, tokens are refreshed (under a
+ * cross-process lock) shortly before they expire.
  */
 export class TokenProvider {
   constructor(
@@ -109,6 +114,11 @@ export class TokenProvider {
 
   get user(): string {
     return this.settings.user;
+  }
+
+  /** Whether a rejected or expiring token can be renewed without the user logging in again. */
+  get canRefresh(): boolean {
+    return !this.settings.staticToken && Boolean(this.settings.clientSecret);
   }
 
   private loginHint(): string {
@@ -128,13 +138,22 @@ export class TokenProvider {
   async getAccessToken(): Promise<string> {
     if (this.settings.staticToken) return this.settings.staticToken;
     const token = await this.load();
-    if (!needsRefresh(token)) return token.access_token;
-    return this.refresh(false);
+    if (this.canRefresh) return needsRefresh(token) ? this.refresh(false) : token.access_token;
+    if (isExpired(token)) {
+      throw new AuthError(
+        `The Yandex login for ${this.settings.user} expired on ${new Date(token.expires_at!).toISOString().slice(0, 10)} ` +
+          `(logins last about a year). ${this.loginHint()}`,
+      );
+    }
+    return token.access_token;
   }
 
   /** Refreshes the token. With force=false, skips the request if another process already refreshed it. */
   async refresh(force = true): Promise<string> {
     if (this.settings.staticToken) throw new AuthError('YANDEX_OAUTH_TOKEN is a static token and cannot be refreshed');
+    if (!this.settings.clientSecret) {
+      throw new AuthError(`Yandex rejected the saved login and it can't be renewed automatically. ${this.loginHint()}`);
+    }
     return withFileLock(this.settings.tokenFile, async () => {
       const current = await this.load();
       if (!force && !needsRefresh(current)) return current.access_token;

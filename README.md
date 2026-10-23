@@ -20,6 +20,8 @@ YANDEX_USER=you@yourdomain.com npx yandex-mail-mcp login
 YANDEX_USER=you@yourdomain.com npx yandex-calendar-mcp login
 ```
 
+Logins last about a year. Run the same command again when a tool reports that the login expired.
+
 Then add them, with no password in the config:
 
 ```sh

@@ -71,8 +71,9 @@ export async function runAuthCli(argv: string[], opts: AuthCliOptions): Promise<
       }
       print(`Account:       ${token.user}`);
       print(`Token file:    ${settings.tokenFile}`);
-      print(`Expires:       ${fmtTime(token.expires_at)}`);
-      print(`Refreshable:   ${token.refresh_token ? 'yes' : 'no'}`);
+      const expired = token.expires_at !== undefined && Date.now() >= token.expires_at;
+      print(`Expires:       ${fmtTime(token.expires_at)}${expired ? ' (EXPIRED, run login again)' : ''}`);
+      print(`Auto-renews:   ${settings.clientSecret && token.refresh_token ? 'yes' : 'no, run login again after it expires'}`);
       if (token.scope) print(`Scope:         ${token.scope}`);
       print(`Last updated:  ${fmtTime(token.updated_at)}`);
       return 0;
@@ -105,7 +106,14 @@ export async function runAuthCli(argv: string[], opts: AuthCliOptions): Promise<
     }
     const token = await completeLogin(settings, code, request.verifier, opts.fetchImpl);
     print();
-    print(`Logged in. Token saved to ${settings.tokenFile} (expires ${fmtTime(token.expires_at)}).`);
+    print(`Logged in. Token saved to ${settings.tokenFile}.`);
+    if (token.expires_at) {
+      print(
+        settings.clientSecret
+          ? `It expires ${fmtTime(token.expires_at)} and renews automatically.`
+          : `It expires ${fmtTime(token.expires_at)}. Run this login again after that (Yandex logins last about a year).`,
+      );
+    }
     if (token.scope) print(`Granted scope: ${token.scope}`);
     return 0;
   } catch (err) {

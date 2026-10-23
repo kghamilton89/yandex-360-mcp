@@ -11,7 +11,7 @@ It's one half of [yandex-360-mcp](https://github.com/kghamilton89/yandex-360-mcp
    ```sh
    YANDEX_USER=you@yourdomain.com npx yandex-mail-mcp login
    ```
-   The server asks only for reading and deleting mail over IMAP (`mail:imap_full`) and sending over SMTP (`mail:smtp`). The token is saved in `~/.config/yandex-360-mcp/oauth/`, readable only by you, and refreshes automatically.
+   The server asks only for reading and deleting mail over IMAP (`mail:imap_full`) and sending over SMTP (`mail:smtp`). The token is saved in `~/.config/yandex-360-mcp/oauth/`, readable only by you.
 3. **Add the server to your MCP client.** Only your address goes in the config, with no password.
 
 Claude Code:
@@ -34,7 +34,9 @@ Claude Desktop, Cursor and other JSON-configured clients:
 }
 ```
 
-`npx yandex-mail-mcp auth-status` shows the saved login, and `npx yandex-mail-mcp logout` deletes it.
+`npx yandex-mail-mcp auth-status` shows the saved login and when it expires, and `npx yandex-mail-mcp logout` deletes it.
+
+> **Log in again about once a year.** Yandex logins last about a year, and Yandex only renews them for apps that send a client secret, which the shared app can't safely ship. When the login expires, every tool returns an error saying so, with the command to run (`npx yandex-mail-mcp login`), so your assistant can tell you what to do. Your own OAuth app with `YANDEX_OAUTH_CLIENT_SECRET` set renews automatically.
 
 Requires Node.js 22 or newer.
 
@@ -71,7 +73,7 @@ Messages are addressed by **folder + UID**. `search_messages` returns UIDs, and 
 | `YANDEX_OAUTH_CLIENT_ID` | shared app | Your own OAuth app's ClientID |
 | `YANDEX_OAUTH_TOKEN` | none | A pre-issued access token (OAuth without the login step, no refresh) |
 | `YANDEX_AUTH` | auto | Forces `oauth` or `password`. By default OAuth is used unless an app password is set |
-| `YANDEX_OAUTH_CLIENT_SECRET` | none | Only needed if your app requires it. PKCE logins don't |
+| `YANDEX_OAUTH_CLIENT_SECRET` | none | Your own app's secret. Lets the server renew the login automatically instead of asking you to log in again each year |
 | `YANDEX_OAUTH_SCOPE` | `mail:imap_full mail:smtp` | Scopes to request (only with your own app) |
 | `YANDEX_OAUTH_TOKEN_FILE` | `~/.config/yandex-360-mcp/oauth/<user>-<app>-<server>.json` | Where the token is stored |
 | `YANDEX_MAIL_READ_ONLY` | `false` | `true` registers only `list_folders`, `search_messages` and `get_message` |
@@ -84,7 +86,7 @@ Messages are addressed by **folder + UID**. `search_messages` returns UIDs, and 
 ## Notes
 
 - **Security:** an app password or `mail:imap_full` token grants full mailbox access. Use `YANDEX_MAIL_READ_ONLY=true` if you only want the assistant to read.
-- **Revoking access:** a revoked or expired OAuth token is refreshed once automatically. If that fails, the error tells you to run `login` again. To cut off access entirely, remove the app at [id.yandex.ru/personal/data-access](https://id.yandex.ru/personal/data-access).
+- **Revoking access:** if Yandex rejects or expires the login, the error tells you to run `login` again (with your own app and its client secret, the server first renews it once on its own). To cut off access entirely, remove the app at [id.yandex.ru/personal/data-access](https://id.yandex.ru/personal/data-access).
 - **Attachments:** `send_message` reads `attachments` from local paths, and `save_attachment` writes local files. Both run with your user's permissions.
 - **Connections:** each tool call opens and closes its own IMAP connection, so nothing goes stale between calls.
 
