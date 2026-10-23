@@ -6,9 +6,10 @@ import path from 'node:path';
 import { writeToken } from 'yandex-360-oauth';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { MailConfig } from '../src/config.js';
-import { MailService, YandexImapFlow } from '../src/mail.js';
+import { ImapFlow } from 'imapflow';
+import { MailService } from '../src/mail.js';
 
-// Minimal IMAP server that behaves like Yandex: XOAUTH2 works but is not advertised.
+// Minimal IMAP server that answers like Yandex (capability line taken from imap.yandex.com).
 function mockImap(expectedToken: string) {
   const seen: string[] = [];
   const server = net.createServer((sock) => {
@@ -34,7 +35,7 @@ function mockImap(expectedToken: string) {
         seen.push(`${cmd.toUpperCase()}${arg ? ` ${arg}` : ''}`);
         switch (cmd.toUpperCase()) {
           case 'CAPABILITY':
-            sock.write(`* CAPABILITY IMAP4rev1 AUTH=PLAIN AUTH=LOGIN IDLE UIDPLUS MOVE\r\n${tag} OK CAPABILITY completed\r\n`);
+            sock.write(`* CAPABILITY IMAP4rev1 CHILDREN UNSELECT LITERAL+ NAMESPACE XLIST UIDPLUS ENABLE ID AUTH=PLAIN AUTH=XOAUTH2 MOVE\r\n${tag} OK CAPABILITY completed\r\n`);
             break;
           case 'AUTHENTICATE':
             pendingAuthTag = tag;
@@ -59,13 +60,13 @@ let close: (() => void) | undefined;
 afterEach(() => close?.());
 
 const connect = (port: number, accessToken: string) => {
-  const client = new YandexImapFlow({ host: '127.0.0.1', port, secure: false, auth: { user: 'me@yandex.ru', accessToken }, logger: false });
+  const client = new ImapFlow({ host: '127.0.0.1', port, secure: false, auth: { user: 'me@yandex.ru', accessToken }, logger: false });
   client.on('error', () => {});
   return client;
 };
 
-describe('YandexImapFlow', () => {
-  it('authenticates with XOAUTH2 even though the server does not advertise it', async () => {
+describe('XOAUTH2 login', () => {
+  it('sends the Yandex XOAUTH2 payload', async () => {
     const srv = await mockImap('TOKEN-1');
     close = srv.close;
     const client = connect(srv.port, 'TOKEN-1');

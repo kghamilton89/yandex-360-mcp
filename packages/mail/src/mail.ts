@@ -58,23 +58,6 @@ function bodyText(parsed: ParsedMail): string {
   return '';
 }
 
-const OAUTH_CAPABILITIES = ['AUTH=OAUTHBEARER', 'AUTH=XOAUTH', 'AUTH=XOAUTH2'];
-
-/**
- * Yandex accepts AUTHENTICATE XOAUTH2 but does not list it in CAPABILITY, and imapflow only
- * uses OAuth when it is advertised. Declare it just before authenticating with a token.
- */
-export class YandexImapFlow extends ImapFlow {
-  async run(command: string, ...args: unknown[]): Promise<unknown> {
-    const opts = args[1] as { accessToken?: string } | undefined;
-    if (command.toUpperCase() === 'AUTHENTICATE' && opts?.accessToken && !OAUTH_CAPABILITIES.some((c) => this.capabilities.has(c))) {
-      this.capabilities.set('AUTH=XOAUTH2', true);
-    }
-    const run = (ImapFlow.prototype as unknown as { run: (this: ImapFlow, command: string, ...args: unknown[]) => Promise<unknown> }).run;
-    return run.call(this, command, ...args);
-  }
-}
-
 function isAuthFailure(err: unknown): boolean {
   const e = err as { authenticationFailed?: boolean; responseCode?: number; code?: string };
   return Boolean(e?.authenticationFailed) || e?.responseCode === 535 || e?.code === 'EAUTH';
@@ -105,7 +88,7 @@ export class MailService {
 
   private async connectImap(): Promise<ImapFlow> {
     return this.withCredentials(async (auth) => {
-      const client = new YandexImapFlow({
+      const client = new ImapFlow({
         host: this.cfg.imap.host,
         port: this.cfg.imap.port,
         secure: this.cfg.imap.secure,
