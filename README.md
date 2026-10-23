@@ -59,6 +59,21 @@ Each package is versioned and released on its own. Releases are staged by GitHub
 
 Release `yandex-360-oauth` before a server version that needs a newer one.
 
+### Release notes for maintainers
+
+Things that are easy to miss when you come back to upgrade these tools:
+
+- **Bump the version in two places.** The server version is in both `package.json` and the `McpServer` constructor in `src/index.ts` (mail and calendar). The workflow checks only `package.json`, so a missed `src/index.ts` ships quietly with the old number.
+- **On 0.x, caret ranges pin the minor version.** The servers depend on `"yandex-360-oauth": "^0.1.0"`, which accepts 0.1.x only. If you release `yandex-360-oauth@0.2.0`, update that range in both servers and release them too, or they keep installing 0.1.x.
+- **Order matters for oauth changes.** Push the `yandex-360-oauth@…` tag, approve it, and wait until `npm view yandex-360-oauth version` shows it. Only then tag the servers. CI runs `npm ci` against the lockfile, so run `npm install` after bumping and commit `package-lock.json`.
+- **One tag means one package.** For several packages, push one tag per package. Each tag runs its own workflow and stages its own version.
+- **npm is slow to show new versions.** After approval, `npm view` and `npx` can return the old version for a few minutes. Add `--prefer-online` to check the current state.
+- **`npm stage` doesn't understand workspaces.** Run `npm stage list` and `npm stage approve` with the package name, or from inside `packages/<name>`, not from the repo root.
+- **Trusted publishing is already set up.** Each package trusts `release.yml` in this repo, for staging only (`npm trust github <pkg> --file release.yml --repo kghamilton89/yandex-360-mcp --allow-stage-publish`). A **new** package needs that command run once, after a first manual `npm publish`. Renaming `release.yml` or the repo breaks the trust.
+- **Re-pushing an existing version is harmless.** The workflow notices the version is already on npm and skips it. To redo a failed release, delete and re-push the tag (`git push origin :refs/tags/<tag>`, then push again).
+- **Manual publishing still works** with `npm publish` from the package folder, using your own npm login and 2FA. Run `npm run build` first, since `dist/` isn't committed.
+- **OAuth app.** Both servers use the shared Yandex OAuth app (`DEFAULT_CLIENT_ID` in `packages/oauth/src/settings.ts`), managed at [oauth.yandex.com](https://oauth.yandex.com). A new scope must be added to the app first, then to the server's `OAUTH_PROFILE` in `src/config.ts`. Users then run `login` again, because existing tokens don't gain new scopes.
+
 ## License
 
 MIT
