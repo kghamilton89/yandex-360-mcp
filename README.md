@@ -48,7 +48,16 @@ YANDEX_USER=me@test.local YANDEX_CALENDAR_APP_PASSWORD=secret YANDEX_CALDAV_URL=
   node scripts/mcp-call.mjs packages/calendar/dist/index.js '[["list_calendars"],["list_events",{}]]'
 ```
 
-Each package is versioned and published on its own. Publish `yandex-360-oauth` first, since both servers depend on it: `npm publish -w yandex-360-oauth`, then `-w yandex-mail-mcp` and `-w yandex-calendar-mcp`.
+## Releasing
+
+Each package is versioned and released on its own. Releases are staged by GitHub Actions and go live only after a maintainer approves them with 2FA:
+
+1. Bump `version` in the package's `package.json` (and the version string in its `src/index.ts`), then commit.
+2. Push a tag named `<package>@<version>`, e.g. `git tag yandex-mail-mcp@0.2.1 && git push origin yandex-mail-mcp@0.2.1`.
+3. The [release workflow](.github/workflows/release.yml) builds, tests, checks that the tag matches `package.json`, and runs `npm stage publish`. npm trusts the workflow through OIDC, so no npm token is stored in GitHub, and the trust only allows staging.
+4. Approve the staged version on npmjs.com (package, then **Staged Packages**) or with `npm stage approve <id>`.
+
+Release `yandex-360-oauth` before a server version that needs a newer one.
 
 ## License
 

@@ -1,0 +1,63 @@
+name: Release
+
+# Push a tag named <package>@<version> (e.g. yandex-mail-mcp@0.2.1) to stage that
+# package on npm. Staging needs no secret: npm trusts this workflow through OIDC and
+# only lets it stage. The release goes live when a maintainer approves it with 2FA
+# (npmjs.com > package > Staged Packages, or `npm stage approve <id>`).
+
+on:
+  push:
+    tags:
+      - 'yandex-*@*'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      # Staged publishing and trust tokens need npm 11.15 or newer
+      - run: npm install -g npm@11.21.1
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+      - name: Resolve the package from the tag
+        id: pkg
+        run: |
+          tag="$GITHUB_REF_NAME"
+          name="${tag%@*}"
+          version="${tag##*@}"
+          dir=""
+          for d in packages/*/; do
+            if [ "$(node -p "require('./${d}package.json').name")" = "$name" ]; then dir="$d"; fi
+          done
+          if [ -z "$dir" ]; then echo "::error::No workspace package named $name"; exit 1; fi
+          actual="$(node -p "require('./${dir}package.json').version")"
+          if [ "$actual" != "$version" ]; then
+            echo "::error::Tag says $version but ${dir}package.json says $actual"
+            exit 1
+          fi
+          if npm view "$name@$version" version >/dev/null 2>&1; then
+            echo "::notice::$name@$version is already on npm, nothing to stage"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+          echo "spec=$name@$version" >> "$GITHUB_OUTPUT"
+
+      - name: Stage for approval
+        if: steps.pkg.outputs.exists != 'true'
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        run: npm stage publish
+
+      - name: Next step
+        if: steps.pkg.outputs.exists != 'true'
+        run: echo "::notice::${{ steps.pkg.outputs.spec }} is staged. Approve it on npmjs.com (Staged Packages tab) or with npm stage approve."
