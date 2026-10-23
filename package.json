@@ -1,0 +1,18 @@
+{
+  "name": "yandex-360-mcp",
+  "private": true,
+  "description": "MCP servers for Yandex 360: Mail and Calendar, installable separately",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm test --workspaces",
+    "typecheck": "npm run typecheck --workspaces"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
