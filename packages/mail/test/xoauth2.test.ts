@@ -160,3 +160,70 @@ describe('MailService with the shared app (no client secret)', () => {
     expect(imap.seen.filter((l) => l.startsWith('PAYLOAD'))).toHaveLength(1);
   });
 });
+
+describe('MailService connection retry', () => {
+  const passwordConfig = (port: number): MailConfig => ({
+    user: 'me@yandex.ru',
+    auth: { type: 'password', password: 'pw' },
+    imap: { host: '127.0.0.1', port, secure: false },
+    smtp: { host: '127.0.0.1', port: 1, secure: false },
+    readOnly: false,
+    saveSent: false,
+  });
+
+  // A port that refuses connections now: bind it, then release it.
+  const freePort = () =>
+    new Promise<number>((resolve) => {
+      const probe = net.createServer().listen(0, '127.0.0.1', () => {
+        const { port } = probe.address() as net.AddressInfo;
+        probe.close(() => resolve(port));
+      });
+    });
+
+  it('retries once when the first connection is refused', async () => {
+    const port = await freePort();
+    let server: net.Server | undefined;
+    // The server comes up after the first attempt has been refused, before the retry.
+    const timer = setTimeout(() => {
+      server = net
+        .createServer((sock) => {
+          sock.write('* OK ready\r\n');
+          sock.on('data', (chunk) => {
+            for (const line of chunk.toString().split('\r\n').filter(Boolean)) {
+              const [tag, cmd = ''] = line.split(' ');
+              if (cmd.toUpperCase() === 'CAPABILITY') sock.write(`* CAPABILITY IMAP4rev1 AUTH=PLAIN\r\n${tag} OK done\r\n`);
+              else if (cmd.toUpperCase() === 'LOGOUT') sock.end(`* BYE\r\n${tag} OK done\r\n`);
+              else sock.write(`${tag} OK done\r\n`);
+            }
+          });
+        })
+        .listen(port, '127.0.0.1');
+    }, 100);
+    close = () => {
+      clearTimeout(timer);
+      server?.close();
+    };
+    const folders = await new MailService(passwordConfig(port), { connectRetryDelayMs: 400 }).listFolders();
+    expect(Array.isArray(folders)).toBe(true);
+  });
+
+  it('gives up after one retry', async () => {
+    const port = await freePort();
+    const started = Date.now();
+    const err = await new MailService(passwordConfig(port), { connectRetryDelayMs: 200 })
+      .listFolders()
+      .then(() => undefined, (e: unknown) => e as { code?: string });
+    expect(err?.code).toBe('ECONNREFUSED');
+    expect(Date.now() - started).toBeGreaterThanOrEqual(200);
+  });
+
+  it('does not retry an authentication failure', async () => {
+    const imap = await mockImap('TOKEN');
+    close = imap.close;
+    const err = await new MailService(passwordConfig(imap.port), { connectRetryDelayMs: 10 })
+      .listFolders()
+      .then(() => undefined, (e: unknown) => e as { authenticationFailed?: boolean });
+    expect(err?.authenticationFailed).toBe(true);
+    expect(imap.seen.filter((l) => l.startsWith('AUTHENTICATE')).length).toBe(1);
+  });
+});

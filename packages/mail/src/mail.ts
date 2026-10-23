@@ -63,16 +63,34 @@ function isAuthFailure(err: unknown): boolean {
   return Boolean(e?.authenticationFailed) || e?.responseCode === 535 || e?.code === 'EAUTH';
 }
 
+/** Network errors that mean the connection never got going, so trying again is safe. */
+const TRANSIENT_CONNECT_ERRORS = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'EAI_AGAIN', 'ENETUNREACH', 'EHOSTUNREACH']);
+
+function isTransientConnectError(err: unknown): boolean {
+  const code = (err as { code?: unknown })?.code;
+  return typeof code === 'string' && TRANSIENT_CONNECT_ERRORS.has(code);
+}
+
+export interface MailServiceOptions {
+  /** Wait before the single retry of a refused or dropped IMAP connection. */
+  connectRetryDelayMs?: number;
+}
+
 export class MailService {
   private readonly tokens?: TokenProvider;
+  private readonly connectRetryDelayMs: number;
 
-  constructor(private readonly cfg: MailConfig) {
+  constructor(
+    private readonly cfg: MailConfig,
+    options: MailServiceOptions = {},
+  ) {
     if (cfg.auth.type === 'oauth') this.tokens = new TokenProvider(cfg.auth.oauth);
+    this.connectRetryDelayMs = options.connectRetryDelayMs ?? 1000;
   }
 
   /**
-   * Runs `fn` with fresh credentials. With OAuth, an authentication failure triggers one
-   * forced token refresh and a retry, which covers tokens revoked before their expiry.
+   * Runs `fn` with fresh credentials. With OAuth and a client secret, an authentication failure
+   * triggers one forced token refresh and a retry, which covers tokens revoked before their expiry.
    */
   private async withCredentials<T>(fn: (auth: { user: string; pass?: string; accessToken?: string }) => Promise<T>): Promise<T> {
     const user = this.cfg.user;
@@ -86,7 +104,22 @@ export class MailService {
     }
   }
 
+  /**
+   * Opens an authenticated IMAP connection. Yandex occasionally refuses a connection opened
+   * right after another one, so a refused or dropped connection is retried once after a pause.
+   * Nothing has been sent at that point, so the retry cannot repeat an action.
+   */
   private async connectImap(): Promise<ImapFlow> {
+    try {
+      return await this.openImap();
+    } catch (err) {
+      if (!isTransientConnectError(err)) throw err;
+      await new Promise((r) => setTimeout(r, this.connectRetryDelayMs));
+      return this.openImap();
+    }
+  }
+
+  private async openImap(): Promise<ImapFlow> {
     return this.withCredentials(async (auth) => {
       const client = new ImapFlow({
         host: this.cfg.imap.host,

@@ -88,7 +88,7 @@ Messages are addressed by **folder + UID**. `search_messages` returns UIDs, and 
 - **Security:** an app password or `mail:imap_full` token grants full mailbox access. Use `YANDEX_MAIL_READ_ONLY=true` if you only want the assistant to read.
 - **Revoking access:** if Yandex rejects or expires the login, the error tells you to run `login` again (with your own app and its client secret, the server first renews it once on its own). To cut off access entirely, remove the app at [id.yandex.ru/personal/data-access](https://id.yandex.ru/personal/data-access).
 - **Attachments:** `send_message` reads `attachments` from local paths, and `save_attachment` writes local files. Both run with your user's permissions.
-- **Connections:** each tool call opens and closes its own IMAP connection, so nothing goes stale between calls.
+- **Connections:** each tool call opens and closes its own IMAP connection, so nothing goes stale between calls. Yandex occasionally refuses a connection opened right after another one, so if opening a connection is refused or drops, the server waits a second and tries once more. **Sending is never retried:** a send that fails partway may already have gone out, so the error is returned instead. Check Sent before sending again.
 
 ## License
 
