@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
 import { completeLogin, createLoginRequest } from './oauth.js';
-import { AuthError, type Env, oauthSettingsFromEnv } from './settings.js';
+import { AuthError, DEFAULT_CLIENT_ID, type Env, type ServiceProfile, oauthSettingsFromEnv } from './settings.js';
 import { deleteToken, readToken } from './store.js';
 
 export interface AuthCliOptions {
@@ -9,8 +9,8 @@ export interface AuthCliOptions {
   program: string;
   /** Environment variables checked in order for the account address. */
   userVars: string[];
-  /** App permissions to tick when registering the OAuth app. */
-  permissions: string[];
+  /** The permissions and token file of this server. */
+  profile: ServiceProfile;
   env?: Env;
   input?: NodeJS.ReadableStream;
   output?: NodeJS.WritableStream;
@@ -50,12 +50,11 @@ export async function runAuthCli(argv: string[], opts: AuthCliOptions): Promise<
   const out = opts.output ?? process.stdout;
   const print = (line = '') => out.write(`${line}\n`);
   const [command, ...flags] = argv;
-  const loginCommand = `npx ${opts.program} login`;
 
   try {
     const user = opts.userVars.map((v) => env[v]).find(Boolean);
     if (!user) throw new AuthError(`Set ${opts.userVars.at(-1)} to your full Yandex 360 address first.`);
-    const settings = oauthSettingsFromEnv(user, { ...env, YANDEX_OAUTH_TOKEN: undefined }, loginCommand);
+    const settings = oauthSettingsFromEnv(user, opts.profile, { ...env, YANDEX_OAUTH_TOKEN: undefined });
 
     if (command === 'logout') {
       const removed = await deleteToken(settings.tokenFile);
@@ -67,7 +66,7 @@ export async function runAuthCli(argv: string[], opts: AuthCliOptions): Promise<
     if (command === 'auth-status') {
       const token = await readToken(settings.tokenFile);
       if (!token) {
-        print(`Not logged in as ${user}. Run: ${loginCommand}`);
+        print(`Not logged in as ${user}. Run: ${opts.profile.loginCommand}`);
         return 1;
       }
       print(`Account:       ${token.user}`);
@@ -83,9 +82,13 @@ export async function runAuthCli(argv: string[], opts: AuthCliOptions): Promise<
     const request = createLoginRequest(settings);
     print(`Signing in to Yandex as ${user}.`);
     print();
-    print(`The OAuth app (ClientID ${settings.clientId}) needs these permissions:`);
-    for (const p of opts.permissions) print(`  - ${p}`);
-    print(`and "https://oauth.yandex.com/verification_code" as a Redirect URI.`);
+    print(`${opts.program} asks only for:`);
+    for (const p of opts.profile.permissions) print(`  - ${p}`);
+    if (settings.clientId !== DEFAULT_CLIENT_ID) {
+      print();
+      print(`Using your own OAuth app (ClientID ${settings.clientId}). It needs these permissions and`);
+      print('"https://oauth.yandex.com/verification_code" as a Redirect URI.');
+    }
     print();
     print('Open this URL, approve access, then paste the code Yandex shows you:');
     print();
@@ -104,7 +107,6 @@ export async function runAuthCli(argv: string[], opts: AuthCliOptions): Promise<
     print();
     print(`Logged in. Token saved to ${settings.tokenFile} (expires ${fmtTime(token.expires_at)}).`);
     if (token.scope) print(`Granted scope: ${token.scope}`);
-    print('Both yandex-mail-mcp and yandex-calendar-mcp use this login when they share the same ClientID.');
     return 0;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

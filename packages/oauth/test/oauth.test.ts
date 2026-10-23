@@ -6,6 +6,7 @@ import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   AuthError,
+  DEFAULT_CLIENT_ID,
   TokenProvider,
   completeLogin,
   createLoginRequest,
@@ -16,6 +17,7 @@ import {
   wantsOAuth,
   writeToken,
   type OAuthSettings,
+  type ServiceProfile,
 } from '../src/index.js';
 
 let dir: string;
@@ -49,22 +51,40 @@ function fakeFetch(handler: (body: URLSearchParams) => { status?: number; json: 
   return { impl, calls };
 }
 
+const MAIL: ServiceProfile = {
+  service: 'mail',
+  scope: 'mail:imap_full mail:smtp',
+  permissions: ['Mail over IMAP', 'Mail over SMTP'],
+  loginCommand: 'npx yandex-mail-mcp login',
+};
+
 describe('settings', () => {
-  it('selects OAuth from the environment', () => {
-    expect(wantsOAuth({})).toBe(false);
-    expect(wantsOAuth({ YANDEX_OAUTH_CLIENT_ID: 'x' })).toBe(true);
-    expect(wantsOAuth({ YANDEX_OAUTH_TOKEN: 't' })).toBe(true);
-    expect(wantsOAuth({ YANDEX_AUTH: 'password', YANDEX_OAUTH_CLIENT_ID: 'x' })).toBe(false);
-    expect(wantsOAuth({ YANDEX_AUTH: 'OAuth' })).toBe(true);
-    expect(() => wantsOAuth({ YANDEX_AUTH: 'kerberos' })).toThrow(AuthError);
+  it('defaults to OAuth unless an app password is configured', () => {
+    expect(wantsOAuth({}, false)).toBe(true);
+    expect(wantsOAuth({}, true)).toBe(false);
+    expect(wantsOAuth({ YANDEX_OAUTH_CLIENT_ID: 'x' }, true)).toBe(true);
+    expect(wantsOAuth({ YANDEX_OAUTH_TOKEN: 't' }, true)).toBe(true);
+    expect(wantsOAuth({ YANDEX_AUTH: 'password' }, false)).toBe(false);
+    expect(wantsOAuth({ YANDEX_AUTH: 'OAuth' }, true)).toBe(true);
+    expect(() => wantsOAuth({ YANDEX_AUTH: 'kerberos' }, false)).toThrow(AuthError);
   });
-  it('requires a client ID or token', () => {
-    expect(() => oauthSettingsFromEnv('a@b.c', {})).toThrow(/YANDEX_OAUTH_CLIENT_ID/);
+  it('uses the shared app and the server\'s own scope by default', () => {
+    const s = oauthSettingsFromEnv('me@example.com', MAIL, { XDG_CONFIG_HOME: '/cfg' });
+    expect(s.clientId).toBe(DEFAULT_CLIENT_ID);
+    expect(s.scope).toBe('mail:imap_full mail:smtp');
+    expect(s.loginCommand).toBe('npx yandex-mail-mcp login');
+    expect(s.tokenFile).toMatch(/^\/cfg\/yandex-360-mcp\/oauth\/me@example\.com-[0-9a-f]{12}-mail\.json$/);
   });
-  it('derives a per-account, per-app token file', () => {
-    const a = defaultTokenFile('Me@Example.com', 'app1', { XDG_CONFIG_HOME: '/cfg' });
-    expect(a).toMatch(/^\/cfg\/yandex-360-mcp\/oauth\/me@example\.com-[0-9a-f]{12}\.json$/);
-    expect(defaultTokenFile('me@example.com', 'app2', { XDG_CONFIG_HOME: '/cfg' })).not.toBe(a);
+  it('lets the environment override the app and scope', () => {
+    const s = oauthSettingsFromEnv('me@example.com', MAIL, { YANDEX_OAUTH_CLIENT_ID: 'mine', YANDEX_OAUTH_SCOPE: 'mail:imap_ro' });
+    expect(s.clientId).toBe('mine');
+    expect(s.scope).toBe('mail:imap_ro');
+  });
+  it('keeps a separate token file per account, app and server', () => {
+    const a = defaultTokenFile('Me@Example.com', 'app1', 'mail', { XDG_CONFIG_HOME: '/cfg' });
+    expect(a).toMatch(/^\/cfg\/yandex-360-mcp\/oauth\/me@example\.com-[0-9a-f]{12}-mail\.json$/);
+    expect(defaultTokenFile('me@example.com', 'app2', 'mail', { XDG_CONFIG_HOME: '/cfg' })).not.toBe(a);
+    expect(defaultTokenFile('me@example.com', 'app1', 'calendar', { XDG_CONFIG_HOME: '/cfg' })).not.toBe(a);
   });
 });
 
@@ -210,7 +230,7 @@ describe('runAuthCli', () => {
     const output = new PassThrough();
     let text = '';
     output.on('data', (c) => (text += c));
-    return { output, text: () => text, base: { program: 'yandex-mail-mcp', userVars: ['YANDEX_MAIL_USER', 'YANDEX_USER'], permissions: ['mail:imap_full'], env: env(), output, ...extra } };
+    return { output, text: () => text, base: { program: 'yandex-mail-mcp', userVars: ['YANDEX_MAIL_USER', 'YANDEX_USER'], profile: MAIL, env: env(), output, ...extra } };
   };
 
   it('logs in, reports status and logs out', async () => {
@@ -223,8 +243,10 @@ describe('runAuthCli', () => {
     expect(await done).toBe(0);
     expect(opened).toHaveLength(1);
     expect(o.text()).toContain(opened[0]!);
-    expect(o.text()).toContain('mail:imap_full');
-    expect(o.text()).toMatch(/Logged in\. Token saved to .*yandex-360-mcp\/oauth\/me@example\.com-/);
+    expect(o.text()).toContain('Mail over IMAP');
+    expect(o.text()).toContain('Using your own OAuth app (ClientID client-123)');
+    expect(new URL(opened[0]!).searchParams.get('scope')).toBe('mail:imap_full mail:smtp');
+    expect(o.text()).toMatch(/Logged in\. Token saved to .*yandex-360-mcp\/oauth\/me@example\.com-[0-9a-f]{12}-mail\.json/);
     expect(calls[0]!.get('code')).toBe('7654321');
 
     const s = opts();
@@ -237,6 +259,19 @@ describe('runAuthCli', () => {
     expect(l.text()).toContain('Removed');
     const s2 = opts();
     expect(await runAuthCli(['auth-status'], s2.base)).toBe(1);
+  });
+
+  it('uses the shared app without extra setup text', async () => {
+    const input = new PassThrough();
+    const opened: string[] = [];
+    const { impl } = fakeFetch(() => ({ json: { access_token: 'AT' } }));
+    const { YANDEX_OAUTH_CLIENT_ID: _drop, ...shared } = env();
+    const o = opts({ env: shared, input, fetchImpl: impl, openUrl: (u) => opened.push(u) });
+    const done = runAuthCli(['login'], o.base);
+    input.end('1234567\n');
+    expect(await done).toBe(0);
+    expect(new URL(opened[0]!).searchParams.get('client_id')).toBe(DEFAULT_CLIENT_ID);
+    expect(o.text()).not.toContain('Using your own OAuth app');
   });
 
   it('fails clearly without a user', async () => {

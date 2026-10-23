@@ -7,28 +7,29 @@
 | [`yandex-mail-mcp`](packages/mail) | Mail | IMAP + SMTP | `npx -y yandex-mail-mcp` |
 | [`yandex-calendar-mcp`](packages/calendar) | Calendar | CalDAV | `npx -y yandex-calendar-mcp` |
 
-Both servers sign in with either a Yandex app password or OAuth, and both support a read-only mode. With OAuth, one login covers both servers, and the token stays out of your MCP config. [`yandex-360-oauth`](packages/oauth) is the small shared package that handles it.
+Both servers sign in with one command through Yandex OAuth, and each asks only for its own permissions. App passwords work too, and both servers support a read-only mode. [`yandex-360-oauth`](packages/oauth) is the small shared package that handles the login.
 
 > Yandex 360's public API covers organization administration, not mailbox or calendar contents. That's why these servers use the standard protocols Yandex exposes for mail and calendar clients.
 
 ## Quick start (Claude Code)
 
-Create one app password per service at [id.yandex.ru/security/app-passwords](https://id.yandex.ru/security/app-passwords): type **Mail** for the Mail server, type **Calendar** for the Calendar server. Then:
+Log in once per server. Your browser opens on Yandex, and each server asks only for its own permissions:
 
 ```sh
-claude mcp add -s user yandex-mail \
-  -e YANDEX_USER=you@yourdomain.com -e YANDEX_MAIL_APP_PASSWORD=... \
-  -- npx -y yandex-mail-mcp
+YANDEX_USER=you@yourdomain.com npx yandex-mail-mcp login
+YANDEX_USER=you@yourdomain.com npx yandex-calendar-mcp login
+```
 
+Then add them, with no password in the config:
+
+```sh
+claude mcp add -s user yandex-mail -e YANDEX_USER=you@yourdomain.com -- npx -y yandex-mail-mcp
 claude mcp add -s user yandex-calendar \
-  -e YANDEX_USER=you@yourdomain.com -e YANDEX_CALENDAR_APP_PASSWORD=... \
-  -e YANDEX_CALENDAR_TIMEZONE=Europe/Moscow \
+  -e YANDEX_USER=you@yourdomain.com -e YANDEX_CALENDAR_TIMEZONE=Europe/Moscow \
   -- npx -y yandex-calendar-mcp
 ```
 
-Prefer OAuth? Register an app at [oauth.yandex.com/client/new](https://oauth.yandex.com/client/new) with redirect URI `https://oauth.yandex.com/verification_code`, then run `npx yandex-mail-mcp login` and pass `YANDEX_OAUTH_CLIENT_ID` instead of a password. The package READMEs walk through it.
-
-See each package's README for the tool list, all options, and JSON config for Claude Desktop, Cursor and others.
+Prefer app passwords? Each package README covers that, along with the tool list, all options, and JSON config for Claude Desktop, Cursor and others.
 
 ## Development
 

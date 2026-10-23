@@ -29,7 +29,6 @@ export interface LoginRequest {
 }
 
 export function createLoginRequest(settings: OAuthSettings, redirectUri = VERIFICATION_CODE_REDIRECT): LoginRequest {
-  if (!settings.clientId) throw new AuthError('YANDEX_OAUTH_CLIENT_ID is required to log in');
   const verifier = base64url(randomBytes(48));
   const challenge = base64url(createHash('sha256').update(verifier).digest());
   const state = base64url(randomBytes(12));
@@ -48,7 +47,6 @@ export function createLoginRequest(settings: OAuthSettings, redirectUri = VERIFI
 }
 
 async function tokenRequest(settings: OAuthSettings, body: Record<string, string>, fetchImpl: Fetch): Promise<TokenResponse> {
-  if (!settings.clientId) throw new AuthError('YANDEX_OAUTH_CLIENT_ID is required');
   const params = new URLSearchParams({ ...body, client_id: settings.clientId });
   if (settings.clientSecret) params.set('client_secret', settings.clientSecret);
   let res: Response;
@@ -72,7 +70,7 @@ async function tokenRequest(settings: OAuthSettings, body: Record<string, string
 function toStored(settings: OAuthSettings, data: TokenResponse, previous?: StoredToken): StoredToken {
   const now = Date.now();
   return {
-    client_id: settings.clientId!,
+    client_id: settings.clientId,
     user: settings.user,
     access_token: data.access_token!,
     refresh_token: data.refresh_token ?? previous?.refresh_token,

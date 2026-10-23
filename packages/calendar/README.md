@@ -1,21 +1,23 @@
 # yandex-calendar-mcp
 
-An [MCP](https://modelcontextprotocol.io) server for **Yandex 360 Calendar** (personal Yandex Calendar and Yandex 360 for Business domains). It talks to CalDAV. Sign in with an [app password](#setup) (simplest) or [OAuth](#oauth-instead-of-an-app-password) (no password stored in your MCP config).
+An [MCP](https://modelcontextprotocol.io) server for **Yandex 360 Calendar** (personal Yandex Calendar and Yandex 360 for Business domains). It talks to CalDAV. You sign in with one command through Yandex OAuth, so no password goes in your MCP config. App passwords work too.
 
 It's one half of [yandex-360-mcp](https://github.com/kghamilton89/yandex-360-mcp). The Mail server, [`yandex-mail-mcp`](https://www.npmjs.com/package/yandex-mail-mcp), installs separately.
 
 ## Setup
 
-1. **Create an app password** of type **Calendar** at [id.yandex.ru/security/app-passwords](https://id.yandex.ru/security/app-passwords).
-2. **Add the server to your MCP client.**
+1. **Log in** once, in a terminal. Your browser opens on Yandex, you approve access, and you paste back the code it shows:
+   ```sh
+   YANDEX_USER=you@yourdomain.com npx yandex-calendar-mcp login
+   ```
+   The server asks only to read and change your calendars (`calendar:all`). The token is saved in `~/.config/yandex-360-mcp/oauth/`, readable only by you, and refreshes automatically.
+2. **Add the server to your MCP client.** Only your address and time zone go in the config, with no password.
 
 Claude Code:
 
 ```sh
 claude mcp add -s user yandex-calendar \
-  -e YANDEX_USER=you@yourdomain.com \
-  -e YANDEX_CALENDAR_APP_PASSWORD=xxxxxxxxxxxxxxxx \
-  -e YANDEX_CALENDAR_TIMEZONE=Europe/Moscow \
+  -e YANDEX_USER=you@yourdomain.com -e YANDEX_CALENDAR_TIMEZONE=Europe/Moscow \
   -- npx -y yandex-calendar-mcp
 ```
 
@@ -27,38 +29,23 @@ Claude Desktop, Cursor and other JSON-configured clients:
     "yandex-calendar": {
       "command": "npx",
       "args": ["-y", "yandex-calendar-mcp"],
-      "env": {
-        "YANDEX_USER": "you@yourdomain.com",
-        "YANDEX_CALENDAR_APP_PASSWORD": "xxxxxxxxxxxxxxxx",
-        "YANDEX_CALENDAR_TIMEZONE": "Europe/Moscow"
-      }
+      "env": { "YANDEX_USER": "you@yourdomain.com", "YANDEX_CALENDAR_TIMEZONE": "Europe/Moscow" }
     }
   }
 }
 ```
 
+`npx yandex-calendar-mcp auth-status` shows the saved login, and `npx yandex-calendar-mcp logout` deletes it.
+
 Requires Node.js 22 or newer.
 
-## OAuth instead of an app password
+### Using an app password instead
 
-With OAuth, your MCP config holds only a ClientID. The token lives in a private file (`~/.config/yandex-360-mcp/oauth/`, mode 0600) and refreshes automatically.
+If you'd rather not use OAuth, create an app password of type **Calendar** at [id.yandex.ru/security/app-passwords](https://id.yandex.ru/security/app-passwords). Then skip the login and add `-e YANDEX_CALENDAR_APP_PASSWORD=...` to the config. Setting a password switches the server to it.
 
-1. **Register an OAuth app** at [oauth.yandex.com/client/new](https://oauth.yandex.com/client/new):
-   - Redirect URI: `https://oauth.yandex.com/verification_code`
-   - Permissions: the **Calendar (CalDAV)** read/write permission. Add the Mail IMAP and SMTP permissions too if you also use `yandex-mail-mcp`, and one login then covers both servers.
-2. **Log in** once, in a terminal. This opens your browser, and you paste back the code Yandex shows:
-   ```sh
-   YANDEX_USER=you@yourdomain.com YANDEX_OAUTH_CLIENT_ID=<ClientID> npx yandex-calendar-mcp login
-   ```
-3. **Add the server** with the same two variables and no password:
-   ```sh
-   claude mcp add -s user yandex-calendar \
-     -e YANDEX_USER=you@yourdomain.com -e YANDEX_OAUTH_CLIENT_ID=<ClientID> \
-     -e YANDEX_CALENDAR_TIMEZONE=Europe/Moscow \
-     -- npx -y yandex-calendar-mcp
-   ```
+### Using your own OAuth app
 
-`npx yandex-calendar-mcp auth-status` shows the saved token, and `npx yandex-calendar-mcp logout` deletes it. The login uses PKCE, so no client secret is needed. If you get a token some other way, pass it as `YANDEX_OAUTH_TOKEN` instead. It's used as-is and never refreshed.
+By default, login goes through the shared "Yandex 360 MCP" app. Its ClientID is public, and with PKCE there's no client secret. Tokens go straight from Yandex to your machine and never pass through the app's owner. To use your own app instead, register one at [oauth.yandex.com/client/new](https://oauth.yandex.com/client/new) with redirect URI `https://oauth.yandex.com/verification_code` and the `calendar:all` permission. Then set `YANDEX_OAUTH_CLIENT_ID` for both `login` and the server. If you get a token some other way, pass it as `YANDEX_OAUTH_TOKEN`. It's used as-is and never refreshed.
 
 ## Tools
 
@@ -83,13 +70,13 @@ With OAuth, your MCP config holds only a ClientID. The token lives in a private 
 | Variable | Default | Description |
 | --- | --- | --- |
 | `YANDEX_USER` | required | Your full address. `YANDEX_CALENDAR_USER` overrides it for this server |
-| `YANDEX_CALENDAR_APP_PASSWORD` | required for app-password auth | A **Calendar** app password. Falls back to `YANDEX_APP_PASSWORD` |
-| `YANDEX_OAUTH_CLIENT_ID` | none | Your OAuth app's ClientID. Setting it switches the server to OAuth |
+| `YANDEX_CALENDAR_APP_PASSWORD` | none |  A **Calendar** app password. Falls back to `YANDEX_APP_PASSWORD` |
+| `YANDEX_OAUTH_CLIENT_ID` | shared app | Your own OAuth app's ClientID |
 | `YANDEX_OAUTH_TOKEN` | none | A pre-issued access token (OAuth without the login step, no refresh) |
-| `YANDEX_AUTH` | auto | Forces `oauth` or `password` when both kinds of credentials are set |
+| `YANDEX_AUTH` | auto | Forces `oauth` or `password`. By default OAuth is used unless an app password is set |
 | `YANDEX_OAUTH_CLIENT_SECRET` | none | Only needed if your app requires it. PKCE logins don't |
-| `YANDEX_OAUTH_SCOPE` | app's permissions | Requests specific scopes instead of all the app's permissions |
-| `YANDEX_OAUTH_TOKEN_FILE` | `~/.config/yandex-360-mcp/oauth/<user>-<app>.json` | Where the token is stored |
+| `YANDEX_OAUTH_SCOPE` | `calendar:all` | Scopes to request (only with your own app) |
+| `YANDEX_OAUTH_TOKEN_FILE` | `~/.config/yandex-360-mcp/oauth/<user>-<app>-<server>.json` | Where the token is stored |
 | `YANDEX_CALENDAR_TIMEZONE` | system zone | IANA zone for reading local-time input and formatting output |
 | `YANDEX_CALENDAR_DEFAULT` | first calendar | Name or URL of the calendar `create_event` uses when none is given |
 | `YANDEX_CALENDAR_READ_ONLY` | `false` | `true` registers only `list_calendars`, `list_events` and `get_event` |
