@@ -10,7 +10,7 @@ It's one half of [yandex-360-mcp](https://github.com/kghamilton89/yandex-360-mcp
    ```sh
    YANDEX_USER=you@yourdomain.com npx yandex-calendar-mcp login
    ```
-   The server asks only to read and change your calendars (`calendar:all`). The token is saved in `~/.config/yandex-360-mcp/oauth/`, readable only by you.
+   The server asks only for access to your events: to read them (`calendar:events.read`) and to create, edit and delete them (`calendar:events.write`). In read-only mode it asks only to read them. It doesn't ask for your to-do lists or other Calendar data. The token is saved in `~/.config/yandex-360-mcp/oauth/`, readable only by you.
 2. **Add the server to your MCP client.** Only your address and time zone go in the config, with no password.
 
 Claude Code:
@@ -47,7 +47,7 @@ If you'd rather not use OAuth, create an app password of type **Calendar** at [i
 
 ### Using your own OAuth app
 
-By default, login goes through the shared "Yandex 360 MCP" app. Its ClientID is public, and with PKCE there's no client secret. Tokens go straight from Yandex to your machine and never pass through the app's owner. To use your own app instead, register one at [oauth.yandex.com/client/new](https://oauth.yandex.com/client/new) with redirect URI `https://oauth.yandex.com/verification_code` and the `calendar:all` permission. Then set `YANDEX_OAUTH_CLIENT_ID` for both `login` and the server. If you get a token some other way, pass it as `YANDEX_OAUTH_TOKEN`. It's used as-is and never refreshed.
+By default, login goes through the shared "Yandex 360 MCP" app. Its ClientID is public, and with PKCE there's no client secret. Tokens go straight from Yandex to your machine and never pass through the app's owner. To use your own app instead, register one at [oauth.yandex.com/client/new](https://oauth.yandex.com/client/new) with redirect URI `https://oauth.yandex.com/verification_code` and the `calendar:events.read` and `calendar:events.write` permissions. Then set `YANDEX_OAUTH_CLIENT_ID` for both `login` and the server. If you get a token some other way, pass it as `YANDEX_OAUTH_TOKEN`. It's used as-is and never refreshed.
 
 ## Tools
 
@@ -77,15 +77,17 @@ By default, login goes through the shared "Yandex 360 MCP" app. Its ClientID is 
 | `YANDEX_OAUTH_TOKEN` | none | A pre-issued access token (OAuth without the login step, no refresh) |
 | `YANDEX_AUTH` | auto | Forces `oauth` or `password`. By default OAuth is used unless an app password is set |
 | `YANDEX_OAUTH_CLIENT_SECRET` | none | Your own app's secret. Lets the server renew the login automatically instead of asking you to log in again each year |
-| `YANDEX_OAUTH_SCOPE` | `calendar:all` | Scopes to request (only with your own app) |
+| `YANDEX_OAUTH_SCOPE` | `calendar:events.read calendar:events.write`, or only `calendar:events.read` in read-only mode | Scopes to request (only with your own app) |
 | `YANDEX_OAUTH_TOKEN_FILE` | `~/.config/yandex-360-mcp/oauth/<user>-<app>-<server>.json` | Where the token is stored |
 | `YANDEX_CALENDAR_TIMEZONE` | system zone | IANA zone for reading local-time input and formatting output |
 | `YANDEX_CALENDAR_DEFAULT` | first calendar | Name or URL of the calendar `create_event` uses when none is given |
-| `YANDEX_CALENDAR_READ_ONLY` | `false` | `true` registers only `list_calendars`, `list_events` and `get_event` |
+| `YANDEX_CALENDAR_READ_ONLY` | `false` | `true` registers only `list_calendars`, `list_events` and `get_event`, and makes `login` ask only to read events. Set it for `login` too |
 | `YANDEX_CALDAV_URL` | `https://caldav.yandex.ru` | CalDAV server |
 
 ## Notes
 
+- **Logins from before 0.3.0** were granted the broader `calendar:all` and keep working. Run `login` again whenever you like to swap it for the narrower permissions.
+- **Turning read-only off** after logging in read-only makes the tools ask you to run `login` again, because that login can't change events.
 - **Revoking access:** if Yandex rejects or expires the login, the error tells you to run `login` again (with your own app and its client secret, the server first renews it once on its own). To cut off access entirely, remove the app at [id.yandex.ru/personal/data-access](https://id.yandex.ru/personal/data-access).
 - **Write safety:** writes use the event's ETag, so editing an event that changed in the meantime fails instead of silently overwriting it.
 - **Invitations:** adding `attendees` sets you as organizer, and Yandex may email invitations to the attendees.

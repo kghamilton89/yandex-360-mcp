@@ -162,6 +162,19 @@ describe('TokenProvider', () => {
     await expect(new TokenProvider(settings).getAccessToken()).rejects.toThrow(/different account or app/);
   });
 
+  it('asks to log in again when the saved login lacks a scope the settings need', async () => {
+    await store({ scope: 'calendar:events.read' });
+    const p = (scope: string) => new TokenProvider({ ...settings, scope, implies: { 'calendar:all': ['calendar:events.read', 'calendar:events.write'] } });
+    expect(await p('calendar:events.read').getAccessToken()).toBe('AT-old');
+    await expect(p('calendar:events.read calendar:events.write').getAccessToken()).rejects.toThrow(
+      /doesn't include calendar:events.write.*npx yandex-mail-mcp login/,
+    );
+    await store({ scope: 'calendar:all' });
+    expect(await p('calendar:events.read calendar:events.write').getAccessToken()).toBe('AT-old');
+    await store({ scope: undefined });
+    expect(await p('anything').getAccessToken()).toBe('AT-old');
+  });
+
   it('uses a valid stored token without refreshing', async () => {
     await store();
     const { impl, calls } = fakeFetch(() => ({ json: {} }));

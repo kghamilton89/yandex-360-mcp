@@ -3,14 +3,30 @@ import { isValidTimeZone, systemTimeZone } from './time.js';
 
 export type CalendarAuth = { type: 'password'; password: string } | { type: 'oauth'; oauth: OAuthSettings };
 
-export const OAUTH_PROFILE: ServiceProfile = {
-  service: 'calendar',
-  scope: 'calendar:all',
-  permissions: ['Reading and changing your calendars and to-do lists (CalDAV)'],
-  loginCommand: 'npx yandex-calendar-mcp login',
-};
+const LOGIN = 'npx yandex-calendar-mcp login';
 
-export const LOGIN_COMMAND = OAUTH_PROFILE.loginCommand;
+/** Logins made before the scopes were narrowed asked for calendar:all, which covers both. */
+const IMPLIES = { 'calendar:all': ['calendar:events.read', 'calendar:events.write'] };
+
+/** The permissions this server asks for: events only, and read-only access in read-only mode. */
+export function oauthProfile(readOnly: boolean): ServiceProfile {
+  return {
+    service: 'calendar',
+    scope: readOnly ? 'calendar:events.read' : 'calendar:events.read calendar:events.write',
+    permissions: readOnly
+      ? ['Reading events in your calendars']
+      : ['Reading events in your calendars', 'Creating, editing and deleting events'],
+    loginCommand: LOGIN,
+    implies: IMPLIES,
+  };
+}
+
+/** Profile for the current environment, so `login` asks for what the configured mode needs. */
+export function oauthProfileFromEnv(env: Env = process.env): ServiceProfile {
+  return oauthProfile(flag(env.YANDEX_CALENDAR_READ_ONLY));
+}
+
+export const LOGIN_COMMAND = LOGIN;
 
 export interface CalendarConfig {
   user: string;
@@ -29,10 +45,10 @@ function flag(value: string | undefined): boolean {
   return value !== undefined && /^(1|true|yes|on)$/i.test(value.trim());
 }
 
-function resolveAuth(user: string, env: Env): CalendarAuth {
+function resolveAuth(user: string, env: Env, readOnly: boolean): CalendarAuth {
   const password = env.YANDEX_CALENDAR_APP_PASSWORD ?? env.YANDEX_APP_PASSWORD;
   try {
-    if (wantsOAuth(env, Boolean(password))) return { type: 'oauth', oauth: oauthSettingsFromEnv(user, OAUTH_PROFILE, env) };
+    if (wantsOAuth(env, Boolean(password))) return { type: 'oauth', oauth: oauthSettingsFromEnv(user, oauthProfile(readOnly), env) };
   } catch (err) {
     if (err instanceof AuthError) throw new ConfigError(err.message);
     throw err;
@@ -54,7 +70,8 @@ function resolveAuth(user: string, env: Env): CalendarAuth {
 export function loadConfig(env: Env = process.env): CalendarConfig {
   const user = env.YANDEX_CALENDAR_USER ?? env.YANDEX_USER;
   if (!user) throw new ConfigError('Missing YANDEX_USER: set it to your full Yandex 360 address.');
-  const auth = resolveAuth(user, env);
+  const readOnly = flag(env.YANDEX_CALENDAR_READ_ONLY);
+  const auth = resolveAuth(user, env, readOnly);
   const timezone = env.YANDEX_CALENDAR_TIMEZONE || systemTimeZone();
   if (!isValidTimeZone(timezone)) throw new ConfigError(`Invalid YANDEX_CALENDAR_TIMEZONE: ${timezone}`);
   return {
@@ -63,6 +80,6 @@ export function loadConfig(env: Env = process.env): CalendarConfig {
     serverUrl: env.YANDEX_CALDAV_URL || 'https://caldav.yandex.ru',
     timezone,
     defaultCalendar: env.YANDEX_CALENDAR_DEFAULT || undefined,
-    readOnly: flag(env.YANDEX_CALENDAR_READ_ONLY),
+    readOnly,
   };
 }
