@@ -2,7 +2,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { isAuthCommand, runAuthCli } from 'yandex-360-oauth';
-import { OAUTH_PROFILE } from './config.js';
+import { oauthProfileFromEnv } from './config.js';
 import { registerCalendarTools } from './tools.js';
 
 const command = process.argv[2];
@@ -11,13 +11,13 @@ if (isAuthCommand(command)) {
     await runAuthCli(process.argv.slice(2), {
       program: 'yandex-calendar-mcp',
       userVars: ['YANDEX_CALENDAR_USER', 'YANDEX_USER'],
-      profile: OAUTH_PROFILE,
+      profile: oauthProfileFromEnv(),
     }),
   );
 }
 
 const server = new McpServer(
-  { name: 'yandex-calendar', version: '0.2.0' },
+  { name: 'yandex-calendar', version: '0.3.0' },
   {
     instructions:
       'Tools for Yandex 360 Calendar over CalDAV. Events are addressed by URL: use list_events to find them. ' +
