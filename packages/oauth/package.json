@@ -1,6 +1,6 @@
 {
   "name": "yandex-360-oauth",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Yandex OAuth (PKCE + verification code) login and token storage shared by the yandex-360-mcp servers",
   "license": "MIT",
   "author": "Kenneth Hamilton",

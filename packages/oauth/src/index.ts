@@ -8,6 +8,7 @@ export {
   type ServiceProfile,
   configDir,
   defaultTokenFile,
+  missingScopes,
   oauthSettingsFromEnv,
   wantsOAuth,
 } from './settings.js';

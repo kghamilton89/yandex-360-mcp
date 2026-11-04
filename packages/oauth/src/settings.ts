@@ -20,6 +20,11 @@ export interface ServiceProfile {
   permissions: string[];
   /** Shown in errors that require logging in again, e.g. "npx yandex-mail-mcp login". */
   loginCommand: string;
+  /**
+   * Broader scopes that also cover narrower ones, e.g. { "calendar:all": ["calendar:events.read"] }.
+   * A saved login granted the broader scope keeps working when the server asks for less.
+   */
+  implies?: Record<string, string[]>;
 }
 
 export interface OAuthSettings {
@@ -33,6 +38,8 @@ export interface OAuthSettings {
   oauthUrl: string;
   tokenFile: string;
   loginCommand?: string;
+  /** See ServiceProfile.implies. */
+  implies?: Record<string, string[]>;
 }
 
 export class AuthError extends Error {}
@@ -75,5 +82,15 @@ export function oauthSettingsFromEnv(user: string, profile: ServiceProfile, env:
     oauthUrl: (env.YANDEX_OAUTH_URL || 'https://oauth.yandex.com').replace(/\/+$/, ''),
     tokenFile: env.YANDEX_OAUTH_TOKEN_FILE || defaultTokenFile(user, clientId, profile.service, env),
     loginCommand: profile.loginCommand,
+    implies: profile.implies,
   };
+}
+
+const scopeList = (s: string | undefined) => (s ?? '').split(/\s+/).filter(Boolean);
+
+/** Requested scopes that a login granted `granted` does not cover, directly or through `implies`. */
+export function missingScopes(granted: string | undefined, requested: string | undefined, implies: Record<string, string[]> = {}): string[] {
+  const have = new Set(scopeList(granted));
+  for (const g of [...have]) for (const s of implies[g] ?? []) have.add(s);
+  return scopeList(requested).filter((s) => !have.has(s));
 }

@@ -1,0 +1,47 @@
+{
+  "name": "yandex-disk-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Yandex Disk: browse, read, write, edit, move and share files",
+  "license": "MIT",
+  "author": "Kenneth Hamilton",
+  "type": "module",
+  "bin": {
+    "yandex-disk-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kghamilton89/yandex-360-mcp.git",
+    "directory": "packages/disk"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "yandex",
+    "yandex-360",
+    "yandex-disk"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "yandex-360-oauth": "^0.1.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}

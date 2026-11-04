@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { AuthError, type OAuthSettings } from './settings.js';
+import { AuthError, type OAuthSettings, missingScopes } from './settings.js';
 import { type StoredToken, readToken, withFileLock, writeToken } from './store.js';
 
 /** Page that shows the user a code to paste back; must be a registered Redirect URI of the app. */
@@ -131,6 +131,14 @@ export class TokenProvider {
     if (!token) throw new AuthError(`Not logged in to Yandex OAuth as ${this.settings.user}. ${this.loginHint()}`);
     if (token.client_id !== this.settings.clientId || token.user.toLowerCase() !== this.settings.user.toLowerCase()) {
       throw new AuthError(`Token file ${this.settings.tokenFile} belongs to a different account or app. ${this.loginHint()}`);
+    }
+    // Yandex reports the granted scope; older or hand-made token files may not have it.
+    const missing = token.scope ? missingScopes(token.scope, this.settings.scope, this.settings.implies) : [];
+    if (missing.length) {
+      throw new AuthError(
+        `The saved Yandex login doesn't include ${missing.join(', ')}, which this server's settings need ` +
+          `(for example after turning read-only mode off). ${this.loginHint()}`,
+      );
     }
     return token;
   }
